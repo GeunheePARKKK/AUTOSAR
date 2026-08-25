@@ -14,11 +14,11 @@
 
 3. **ECU Extract 단계에서 "Performs Flattening" 체크 여부**: 이전 실습(RTE3)에서는 이 단계에 `Performs Flattening` 체크가 명시되어 있었는데, 이번 절차에는 언급이 없다. 실제 화면에 해당 옵션이 보인다면 체크하고 진행하는 것이 안전하다.
 
-4. **`IoHwAbAnalogInputDirectLogical_Test2`라는 이름**: 실제 프로젝트 화면에서는 `Test1`이 존재했다(`Test2`가 아니라). 실습 문서와 실제 프로젝트의 기존 항목 이름이 다를 수 있으니, 이름을 바꾸기 전에 실제로 존재하는 항목명을 눈으로 확인하고 그 항목을 바꾸는 것이 안전하다.
+4. **`IoHwAbAnalogInputDirectLogical_Test2`라는 이름, 그리고 "이름만 바꾸면 되는가"**: 실제 프로젝트 화면에서는 `Test1`이 존재했다(`Test2`가 아니라). 그리고 더 중요한 점은 — **Short Name(이름)을 바꾸는 것과, 그 컨테이너가 실제로 어떤 ADC 채널을 참조하는지는 완전히 별개의 설정이라는 것**이다. `Test2`(또는 `Test1`)를 `Pot`으로 개명한다고 해서 그 항목이 자동으로 PTA11에 연결된 ADC 채널을 참조하게 되는 것이 아니다. 이름은 그저 사람이 읽는 라벨일 뿐이고, 실제 하드웨어 연결은 그 컨테이너 안에 있는 별도의 참조 필드(대개 `Adc Channel Ref` 또는 `Assigned Channel` 계열의 이름으로 존재)가 담당한다. 따라서 이름을 바꾼 뒤에는 반드시 그 컨테이너를 열어 참조 필드가 비어있지 않은지, 그리고 PTA11이 속한 ADC 채널/그룹을 정확히 가리키고 있는지 직접 확인해야 한다. 자세한 확인 방법은 아래 "6. ECU Configuration → ③ I/O Configuration → IoHwAb Logical 설정" 항목을 참고.
 
 5. **`SWC_SeatHeatingControl` 생성 문구가 2번 적혀 있음**: 실제 오류는 아니고 메모가 중복 작성된 것으로 보인다(같은 동작을 두 번 설명).
 
-6. **I/O Mapping에서 `P_IoHwAb…_Pot`, `P_IoHwAb…_LED_Blue`가 안 보이는 이슈**: 이 문서 어딘가에서 겪었던 것처럼, IoHwAb Logical 설정(Adc Group Ref, Pwm Hw Channel 체인)이 끝까지 유효하게 연결되어 있는지, 그리고 그 설정 이후에 ECU Configuration을 다시 생성(Generate)했는지를 I/O Mapping 진행 전에 먼저 확인하는 것을 권장한다.
+6. **I/O Mapping에서 `P_IoHwAb…_Pot`, `P_IoHwAb…_LED_Blue`가 안 보이는 이슈**: 이 포트들은 IoHwAb Logical 설정이 존재해야만 자동으로 생성된다. 안 보인다면 원인은 대개 다음 셋 중 하나다. (a) Logical 컨테이너 자체를 아직 안 만들었거나, (b) 만들었지만 그 안의 참조 필드(Adc Channel Ref, Hw Pwm Ch Ref 등)가 비어 있거나 잘못된 대상을 가리키고 있거나, (c) 설정은 맞는데 I/O Mapping 화면을 열기 전에 `Generate ECU Configuration`을 다시 실행하지 않아 화면이 새로 갱신되지 않은 경우다. I/O Mapping으로 넘어가기 전에 이 세 가지를 순서대로 확인하는 것을 권장한다.
 
 이 6가지를 제외하면 나머지 절차는 논리적으로 일관되고 순서도 올바르다. 아래부터는 각 단계가 정확히 무엇을 하는 단계인지 자세히 설명한다.
 
@@ -272,19 +272,97 @@ RTE event to Task Mapping
 
 ### ③ I/O Configuration
 
-이 단계는 순수 소프트웨어(SWC, Runnable) 설정을 실제 물리적인 MCU 핀/타이머/ADC 자원과 연결하는 준비 작업이다.
+이 단계는 순수 소프트웨어(SWC, Runnable) 설정을 실제 물리적인 MCU 핀/타이머/ADC 자원과 연결하는 준비 작업이다. 아래 항목들은 서로 참조로 연결된 체인이라, 순서를 지켜서 "만들고 → 그 다음 것에서 방금 만든 것을 참조"하는 흐름으로 진행해야 한다.
 
-**Port(핀) 설정**: `PTA31`(EMIOS_1_CH_14 출력 모드로 설정, PWM 신호가 나갈 물리 핀)과 `PTA11`(아날로그 입력 모드로 설정, 가변저항 값이 들어올 물리 핀)의 동작 모드를 지정한다.
+**Port(핀) 설정**
 
-**Pwm/Emios/Mcl 체인**: PWM 출력(SetDutyCycle)이 실제로 동작하려면 여러 계층의 설정이 순서대로 연결되어야 한다.
-- `PwmChannel_PTA31` (Pwm 모듈의 논리 채널, 주기 8191, 초기 듀티 0)이 실제로 어떤 하드웨어 채널을 쓸지 지정해야 하므로
-- `PwmEmiosChannels_CH14` (Emios 모듈의 물리 채널, OPWMB 모드)를 만들고
-- 이 Emios 채널이 사용할 타이밍 기준인 `EmiosMclMasterBus_1_CH8` (Mcl 모듈의 마스터 버스, 카운터 방식/분주비 설정)을 만든 뒤
-- `PwmChannel_PTA31 → PwmEmiosChannels_CH14 → EmiosMclMasterBus_1_CH8`로 참조를 끝까지 연결한다.
+```
+Configuration → Ecu → Mcal → Ecud_Port.arxml → Port 더블클릭
+Container → PortContainer_A → Pin 목록 확인
 
-이 체인이 하나라도 끊기면 SetDutyCycle을 호출해도 실제 PWM 신호가 나오지 않는다.
+PTA31 더블클릭
+  Initial Mode : PORT_ALT1_FUNC_MODE
+  Mode : EMIOS_1_EMIOS_1_CH_14_H_OUT 선택 → OK
 
-**IoHwAb Logical 설정**: `IoHwAbAnalogInputDirectLogical_Pot`(아날로그 입력 논리 채널, 실제 ADC 그룹을 참조)과 `IoHwAbPwmLogical_LED_Blue`(PWM 출력 논리 채널, 방금 만든 `PwmChannel_PTA31`을 참조)를 만든다. 이 Logical 설정이 곧 IoHwAb Service SWC가 자동으로 갖게 되는 실제 P-Port(`P_IoHwAb…_Pot`, `P_IoHwAb…_LED_Blue`)의 근거가 된다. 즉 이 설정이 정확히(참조까지 전부) 채워져 있어야 다음 단계에서 연결할 포트가 실제로 나타난다.
+PTA11 더블클릭
+  Direction : PORT_PIN_IN
+  Initial Mode : PORT_ANALOG_INPUT_MODE → OK
+```
+
+`PTA31`은 PWM 신호가 실제로 나갈 물리 핀이라서, 그 핀의 대체 기능(Alt Func) 모드를 eMIOS 채널 14의 출력 기능으로 지정한 것이다. `PTA11`은 가변저항(Pot) 값이 들어올 핀이라서 입력 방향 + 아날로그 입력 모드로 지정한다.
+
+**Pwm 모듈: 논리 채널(PwmChannel) 생성**
+
+```
+Mcal → Ecud_PWM.arxml → Pwm 더블클릭 → Channel 클릭 → 우측 상단 + 클릭
+  Short Name : PwmChannel_PTA31
+  Id : 1
+  Class : PWM_FIXED_PERIOD
+  Period Default : 8191, Dutycycle Default : 0
+```
+
+이 시점의 `PwmChannel_PTA31`은 아직 "어떤 하드웨어 타이머를 쓸지"가 비어 있는 논리 채널일 뿐이다. 이걸 채우기 위해 아래 Emios/Mcl 설정이 필요하다.
+
+**Emios 모듈: 물리 채널(PwmEmiosChannels) 생성**
+
+```
+Pwm → Emios 클릭 → PwmEmios_0 → Channels → PwmEmiosChannels_0 → 우측 상단 + 클릭
+  Short Name : PwmEmiosChannels_CH14
+  Emios Ch Id : CH_14
+  Emios Ch Mode : EMIOS_PWM_IP_MODE_OPWMB
+  Emios Ch Counter Bus : EMIOS_PWM_IP_BUS_BCDE
+```
+
+이 채널도 아직 "어떤 타이밍 기준(버스)을 쓸지"에 해당하는 `Bus Ref`가 비어 있다. 그 기준이 되는 Mcl Master Bus가 아직 없으므로 먼저 만들어야 한다.
+
+**Mcl 모듈: Master Bus 생성**
+
+```
+Mcal → Ecud_Mcl.arxml → Mcl 더블클릭 → Emios Common 클릭
+  EmiosCommon_1 → Emios Mcl Master Bus → 우측 상단 + 클릭
+  Short Name : EmiosMclMasterBus_1_CH8
+  Number : EMIOS_CH_8
+  Mode Type : MCB_UP_COUNTER
+  Emios Mcl Default Period : 8191
+  Prescaler : DIV_12
+```
+
+**체인 연결 (참조 채우기)**
+
+```
+Pwm → Emios → PwmEmiosChannels_CH14 → Bus Ref : EmiosMclMasterBus_1_CH8로 설정
+
+Pwm → Channel(최상위) → PwmChannel_PTA31 → Hw Channel : PwmEmiosChannels_CH14
+                                          → Mcu Clock : CORE_CLK
+```
+
+정리하면 참조 순서는 `PwmChannel_PTA31 --(Hw Channel)--> PwmEmiosChannels_CH14 --(Bus Ref)--> EmiosMclMasterBus_1_CH8` 이다. 이 체인이 하나라도 비어 있거나 끊기면, 나중에 SetDutyCycle을 호출해도 실제 PWM 신호가 PTA31 핀으로 나오지 않는다.
+
+**IoHwAb Logical 설정 (핵심 주의)**
+
+```
+Mcal → Ecud_IoHwAb.arxml → IoHwAb 더블클릭 → All Contents 클릭
+
+IoHwAbConfig → IoHwAbAnalogInputDirect → Logical
+  기존 IoHwAbAnalogInputDirectLogical_Test2(실제 화면상 이름이 다를 수 있음, 위 검토의견 4번 참고) 더블클릭
+  → Short Name을 IoHwAbAnalogInputDirectLogical_Pot로 변경
+
+IoHwAbPwm → Logical → 우측 상단 + 클릭
+  Short Name : IoHwAbPwmLogical_LED_Blue
+  Callback Via Rte : false
+  Hw Pwm Ch Ref : PwmChannel_PTA31로 설정 → OK
+```
+
+이 두 항목은 성격이 다르다는 걸 구분해야 한다.
+
+- **PWM 쪽(`IoHwAbPwmLogical_LED_Blue`)**: 원래부터 존재하지 않던 새 컨테이너를 만드는 것이므로, 위 스텝처럼 `Hw Pwm Ch Ref`에 직접 `PwmChannel_PTA31`을 선택해서 참조를 채워 넣는 과정이 절차에 포함되어 있다.
+- **아날로그 입력 쪽(`IoHwAbAnalogInputDirectLogical_Pot`)**: 기존에 있던(Test 목적으로 만들어졌던) 컨테이너의 **이름만** 바꾸는 절차다. 이름(Short Name)은 사람이 읽기 위한 라벨일 뿐이고, 그 컨테이너가 실제로 어떤 ADC 채널을 읽어오는지는 컨테이너 내부의 별도 참조 필드(툴 화면에 `Adc Channel Ref` 또는 `Assigned Channel` 계열의 이름으로 표시됨)가 결정한다. **따라서 이름을 바꾸는 것만으로 Pot(PTA11)이 연결되는 것이 아니다.** 이름을 바꾼 뒤 반드시 그 컨테이너를 열어서:
+  1. 참조 필드가 비어 있지 않은지 확인하고,
+  2. 그 참조가 가리키는 ADC 채널이 실제로 PTA11에 대응하는 채널이 맞는지 확인해야 한다(다른 테스트용 핀을 가리키고 있었다면 PTA11에 해당하는 채널로 다시 선택해줘야 한다).
+  
+  만약 그 참조 대상이 되는 ADC 채널/그룹 자체가 아직 설정되어 있지 않다면(즉 Ecud_Adc.arxml에 PTA11용 채널이 없다면), Pwm/Emios/Mcl 체인을 만들었던 것과 같은 방식으로 Adc 모듈에서 해당 채널을 먼저 만들고 나서 이 Logical 컨테이너의 참조 필드를 그 채널로 연결해줘야 한다. 이 실습 자료 자체에는 Adc 모듈 설정 단계가 별도로 나와 있지 않은데, 이는 Base Project에 이미 필요한 Adc 채널이 구성되어 있다는 전제하에 생략되었을 가능성이 높다 — 그래서 "이름만 바꾸면 되는지"는 실제 화면에서 참조 필드를 열어 눈으로 확인하기 전까지는 단정할 수 없다.
+
+이렇게 채워진 Logical 설정이 곧 IoHwAb Service SWC가 자동으로 갖게 되는 실제 P-Port(`P_IoHwAb…_Pot`, `P_IoHwAb…_LED_Blue`)의 근거가 된다. 즉 이 설정이 이름뿐 아니라 참조까지 정확히 채워져 있어야, 다음 단계인 I/O Mapping에서 연결할 포트가 실제로 나타난다.
 
 ### ④ I/O Mapping
 
