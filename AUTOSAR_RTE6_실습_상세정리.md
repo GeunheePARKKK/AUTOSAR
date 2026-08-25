@@ -4,6 +4,22 @@
 
 ---
 
+## 🚨 실전에서 실제로 막혔던 5가지 (빌드 성공까지 반드시 확인) 🚨
+
+**이 문서(그리고 학교 실습 원문)만 보고 그대로 따라 하면 100% 막히는 지점 5곳이다.** 실제로 이 순서대로 하나씩 겪고, 매번 원인을 파일/로그로 직접 검증해서 고친 것들이다. 아래 순서대로 진행하면서 각 지점을 미리 확인하면 시행착오를 줄일 수 있다. (☆ 표시는 실습 원문 어디에도 안 나오는, 완전히 새로 찾아낸 단계다.)
+
+| # | 어느 단계에서 | 증상 | 진짜 원인 | 해결 |
+|---|---|---|---|---|
+| 1 | I/O Configuration → I/O Mapping | `P_IoHwAb…_Pot`, `P_IoHwAb…_LED_Blue`가 목록에 안 보임 | ☆ **"Harmonize & Generate"**(→ 아래 6-⑤) 자체를 원문이 빠뜨림 | `Generate ECU Configuration` 실행 후 **망치 아이콘 옆 화살표 → `Generate All`** (에러 떠도 무시) |
+| 2 | 최종 Build | `ERR20004`/`ERR20007`, Os 모듈부터 빌드 중단 | `OsAlarm_SWC_SeatSwitch_100ms`의 `Counter Ref` 또는 `Action(Activate Task)` 중 하나(혹은 둘 다)가 저장 안 됨 | OS Configuration으로 돌아가 Alarm의 두 값을 다시 채우고 저장 확인 |
+| 3 | 최종 Build | `SAFERTE_ERR_0310` (IoHwAb 이벤트 RteEventToTaskMapping 누락) | IoHwAb에 Pot/LED_Blue를 **추가한 시점이** RTE Configuration을 마지막으로 실행한 시점보다 **나중**이라, 자동 생성된 매핑에 이 둘이 없음 | ☆ **`Generate ECU Configuration`(RTE Configuration)을 한 번 더 실행** — IoHwAb가 최신 상태인 뒤에 |
+| 4 | 최종 Build | `SAFERTE_ERR_0129` (`RteUsedOsAlarmRef` 누락) | RTE6는 유일하게 Task+Alarm을 새로 만들기 때문에, RTE가 이 둘의 연결을 자동으로 못 채움 (RTE3/4/5/IO엔 없는 RTE6 전용 문제) | ☆ `Rte → All Contents → SwcInstance_SWC_SeatSwitch → RteEventToTaskMapping_TE_RE_SeatSwitch → Used Os Alarm Ref → Browse → OsAlarm_SWC_SeatSwitch_100ms` |
+| 5 | 최종 Build (링크 단계, 컴파일 다 끝난 뒤) | `undefined reference to Rte_Call_R_SW02_ReadDirect` 등 | ☆ **실습 자료 C 코드 사진의 포트 이름(`R_SW02`, `R_LED02`, `R_LED04`)이 실제로 만든 포트 이름(`R_SW06`, `R_LED_Red`, `R_LED_Blue`)과 다름** | 아래 "3. C Coding"의 실제 성공한 코드 그대로 사용 |
+
+1번·3번은 "6. ECU Configuration → ⑤ Harmonize & Generate", "③ Task Mapping"에, 2번은 "① OS Configuration"에, 4번은 "③-1 Used Os Alarm Ref 수동 설정"에, 5번은 "3. C Coding"에 각각 자세히 풀어놨다. 아래는 각 단계를 개념부터 하나씩 짚어가는 상세 설명이다.
+
+---
+
 ## 검토 의견 (붙여넣어주신 절차에 대해)
 
 전체적으로 절차의 논리와 순서는 AUTOSAR 방법론에 정확히 맞게 구성되어 있다. 다만 아래 8가지는 실제 진행 중에 한 번 더 확인해보는 게 좋다.
@@ -206,6 +222,57 @@ SWC_SeatSwitch.c, SWC_SeatHeatingControl.c 생성 후 코드 작성
 
 지금까지는 "무엇을 할지"에 대한 껍데기(Runnable, Event, Access Point)만 만들었을 뿐, 실제 알고리즘은 아직 없다. 이 단계에서 각 Runnable의 Symbol 이름(`SeatSwitch_func`, `SeatHeatingControl_func`)과 정확히 일치하는 함수를 C 파일에 작성한다. 함수 안에서는 앞서 등록해둔 Access Point들에 대응하는 RTE API(`Rte_Call_...`, `Rte_Write_...` 등)를 호출하는 코드를 작성한다. RTE가 생성해주는 `Rte_<Swc>.h` 헤더를 include해야 이 API들을 쓸 수 있다.
 
+> ### 🚨🚨🚨 실전에서 빌드까지 성공한 코드 (실습 자료 사진 그대로 베끼면 링크 에러 남!) 🚨🚨🚨
+>
+> **실습 자료의 C 코드 사진에 있는 포트 이름을 그대로 타이핑하면 최종 Build에서 `undefined reference` 링커 에러가 난다.** 사진 속 코드는 `R_SW02`, `R_LED02`, `R_LED04`라는 이름을 쓰는데, 이 실습(RTE6)에서 실제로 만든 포트 이름은 위 "④/⑤ SWC 포트 설정"에서 만든 **`R_SW06`, `R_LED_Red`, `R_LED_Blue`, `R_Pot`**이다. 즉 사진 속 이름과 실제 이 프로젝트의 포트 이름이 다르다 — **반드시 아래 코드처럼 실제로 만든 포트 이름 그대로 써야 한다.**
+>
+> 아래는 실제로 끝까지(compile + link) 성공한 코드다. 이대로 쓰면 된다.
+>
+> ```c
+> // SWC_SeatSwitch.c
+> #include "Rte_SWC_SeatSwitch.h"
+>
+> void SeatSwitch_func(void)
+> {
+>     IoHwAb_LevelType level;
+>     boolean data;
+>     Rte_Call_R_SW06_ReadDirect(&level);              // ★ R_SW02 아님! R_SW06
+>     data = (level == IOHWAB_HIGH) ? TRUE : FALSE;
+>     Rte_Write_P_SeatSwitch_PassengerDetected(data);
+>
+>     uint16 data_Pot = 0;
+>     Rte_Call_R_Pot_ReadDirect(&data_Pot, 1);
+>     Rte_Write_P_SeatSwitch_HeatStrength(data_Pot);
+> }
+> ```
+>
+> ```c
+> // SWC_SeatHeatingControl.c
+> #include "Rte_SWC_SeatHeatingControl.h"
+>
+> void SeatHeatingControl_func(void)
+> {
+>     IoHwAb_LevelType level;
+>     boolean data;
+>     Rte_Read_R_SeatSwitch_PassengerDetected(&data);
+>     level = (data == TRUE) ? IOHWAB_HIGH : IOHWAB_LOW;
+>     Rte_Call_R_LED_Red_WriteDirect(level);            // ★ R_LED02 아님! R_LED_Red
+>
+>     uint16 data_Pot = 0;
+>     Rte_Read_R_SeatSwitch_HeatStrength(&data_Pot);
+>     Rte_Call_R_LED_Blue_SetDutyCycle(data_Pot * 2);   // ★ R_LED04 아님! R_LED_Blue
+> }
+> ```
+>
+> 실제로 겪은 링커 에러 메시지는 이랬다:
+> ```
+> SWC_SeatHeatingControl.c:9: undefined reference to `Rte_Call_R_LED02_WriteDirect'
+> SWC_SeatHeatingControl.c:13: undefined reference to `Rte_Call_R_LED04_SetDutyCycle'
+> SWC_SeatSwitch.c:7: undefined reference to `Rte_Call_R_SW02_ReadDirect'
+> collect2.exe: error: ld returned 1 exit status
+> ```
+> 이 에러는 AUTOSAR 설정(ECU Configuration, I/O Mapping 등)이 전부 끝나고 최종 Build의 맨 마지막(컴파일은 다 끝나고 링크 단계)에서만 나타난다 — 즉 이 오타가 있어도 컴파일까지는 문제없이 진행되다가, 마지막 링크 단계에 가서야 "그런 이름의 함수가 없다"고 걸린다는 뜻이니, 최종 Build 막판에 이런 `undefined reference` 에러가 뜨면 십중팔구 C 코드의 포트 이름 오탈자다.
+
 ---
 
 ## 4. ECU Mapping
@@ -254,6 +321,14 @@ RTE가 생성한 Runnable 호출 코드는 결국 OS(운영체제)의 Task 안�
 `OsTask_SWC_SeatSwitch_100ms`는 SWC_SeatSwitch의 주기적인 Runnable(RE_SeatSwitch)이 실행될 Task이고, `OsTask_SWC_SeatHeatingControl`은 데이터 수신 시 반응하는 Runnable(RE_SeatHeatingControl)이 실행될 Task다. Priority(117, 118)는 여러 Task가 동시에 실행 대기 중일 때 어느 것을 먼저 처리할지 결정하는 우선순위다.
 
 `OsAlarm_SWC_SeatSwitch_100ms`는 `OsCounter_Main`(시간을 세는 카운터)을 기준으로, 시간이 다 되면 `OsTask_SWC_SeatSwitch_100ms`를 깨우는(Activate Task) 역할을 한다. 이게 바로 Timing Event(100ms)가 실제 하드웨어/OS 수준에서 구현되는 방식이다. SWC_SeatHeatingControl 쪽 Task에는 별도 Alarm이 필요 없는데, 이 Task는 시간이 아니라 "데이터 도착"에 반응하기 때문이다(RTE가 데이터 도착 시점에 직접 이 Task를 활성화한다).
+
+> **🚨 실전 주의**: `Counter Ref`와 `Action(Activate Task)` **둘 다** 반드시 저장되어야 한다. 하나라도 빠지면 최종 Build에서 아래처럼 근본적인 에러가 나서 IoHwAb를 포함한 뒤쪽 모든 모듈의 생성이 통째로 스킵된다(즉 이 에러가 있으면 IoHwAb 설정을 아무리 잘 해놔도 소용없다).
+> ```
+> ERR20004: Expected min 1 subcontainers with definition /AUTOSAR/Os/OsAlarm/OsAlarmAction. Found 0
+>  - Container Name: OsAlarm_SWC_SeatSwitch_100ms
+> ERR20007: Expected min 1 config reference values with definition .../OsAlarmCounterRef. Found 0
+> ```
+> Build 전에 `OsAlarm_SWC_SeatSwitch_100ms`를 다시 열어서 `Counter Ref`(`OsCounter_Main`)와 `Action → Activate Task → Browse → OsTask_SWC_SeatSwitch_100ms`가 실제로 채워져 저장까지 됐는지 눈으로 확인하는 것을 강력히 권장한다.
 
 `OsApplication0`에 Alarm과 두 Task를 등록하는 것은, 이 자원들을 하나의 OS Application(그룹) 소속으로 명시해서 관리하기 위한 작업이다.
 
@@ -465,10 +540,12 @@ Input Files List → Add → 'App_Rte' 입력 → Add → OK
 
 등록이 끝나면 실제 빌드(망치 아이콘)를 실행한다. 이 과정에서 각 BSW/RTE 코드 생성기가 arxml 모델을 읽어 `Rte.c`, `Rte_SWC_SeatSwitch.h` 같은 실제 C 소스/헤더 파일을 만들어내고, 우리가 3단계에서 작성한 `SWC_SeatSwitch.c`, `SWC_SeatHeatingControl.c`와 함께 컴파일·링크되어 최종 실행 파일이 완성된다.
 
-**참고**: 이 망치 아이콘을 직접 클릭하는 `Build`는 6단계에서 IoHwAb 확인용으로 썼던 `Generate All`(아이콘 옆 화살표 → Generate All)과 다르게, 관련 없는 설정에 오류가 하나만 있어도 그 자리에서 전체가 멈춘다. 예를 들어 `Ecud_Os.arxml`의 `OsAlarm_SWC_SeatSwitch_100ms → OsAlarmAction → OsAlarmActivateTask`에서 `OsAlarmActivateTaskRef`(Alarm이 깨울 Task 참조)가 비어있으면 `ERR20007` 같은 에러와 함께 빌드가 중단된다. 이런 에러가 나면 OS Configuration 단계에서 Alarm의 Action(Activate Task) 설정이 실제로 저장됐는지부터 다시 확인하는 것이 좋다.
+**참고**: 이 망치 아이콘을 직접 클릭하는 `Build`는 6단계에서 IoHwAb 확인용으로 썼던 `Generate All`(아이콘 옆 화살표 → Generate All)과 다르게, 관련 없는 설정에 오류가 하나만 있어도 그 자리에서 전체가 멈춘다. 이 최종 Build 단계에서 실제로 순서대로 만난 에러와 원인은 위 "🚨 실전에서 실제로 막혔던 5가지" 표의 2~5번이다 — `ERR20004`/`ERR20007`(OS Alarm 설정 누락) → `SAFERTE_ERR_0310`(IoHwAb 이벤트 매핑 누락) → `SAFERTE_ERR_0129`(`RteUsedOsAlarmRef` 누락) → `undefined reference`(C 코드 포트 이름 오탈자) 순으로 하나씩 나타났다. 에러가 나면 당황하지 말고, 에러 메시지에 적힌 `Container Name`/`Path`를 표와 대조해서 어떤 유형인지부터 확인하는 것이 좋다.
 
 ---
 
 ## 전체 흐름 한 줄 요약
 
 VFB Level(구조 설계: 컴포넌트·포트·인터페이스·연결) → RTE Level(행동 설계: Runnable·Event·Access Point) → C Coding(실제 알고리즘) → ECU Mapping/Extract(제어기 배치) → ECU Configuration(OS Task/Alarm, Event-Task 매핑, 실제 하드웨어 핀/타이머/ADC 연결, SWC-IoHwAb 포트 연결) → Generate & Build(전체를 실행 파일로 변환). 이 순서 하나하나가 "추상적인 설계"에서 "제어기에서 실제로 도는 코드"로 점점 구체화되어가는 과정이다.
+
+**이 문서는 위 5가지 함정을 실제로 하나씩 겪고, 매번 파일/로그(그리고 빌드까지 성공한 원본 프로젝트와의 직접 비교)로 원인을 검증한 뒤 최종적으로 compile + link까지 성공한 것을 확인하고 정리한 내용이다.**
