@@ -6,7 +6,7 @@
 
 ## 검토 의견 (붙여넣어주신 절차에 대해)
 
-전체적으로 절차의 논리와 순서는 AUTOSAR 방법론에 정확히 맞게 구성되어 있다. 다만 아래 7가지는 실제 진행 중에 한 번 더 확인해보는 게 좋다.
+전체적으로 절차의 논리와 순서는 AUTOSAR 방법론에 정확히 맞게 구성되어 있다. 다만 아래 8가지는 실제 진행 중에 한 번 더 확인해보는 게 좋다.
 
 1. **`IoHwAb_If_AnalnDir`라는 표기**: 다이어그램에서는 `IoHwAb_If_AnaInDir`(Analog Input Direct)로 표기되어 있다. 실습 노트의 `AnalnDir`는 오탈자로 보이며, 툴에서 실제 인터페이스 이름을 선택할 때 정확한 이름인지 확인이 필요하다.
 
@@ -21,6 +21,8 @@
 6. **(★중요) I/O Mapping에서 `P_IoHwAb…_Pot`, `P_IoHwAb…_LED_Blue`가 안 보이는 이슈**: 이 문서 원문에는 IoHwAb Logical 설정(Pot 이름 변경, LED_Blue 생성) 직후 곧바로 I/O Mapping으로 넘어가는데, **그 사이에 "Harmonize & Generate" 단계가 빠져 있다.** `Ecud_IoHwAb.arxml`에 설정을 저장하는 것과, `Service and I/O` 화면이 실제로 보여주는 IoHwAb 서비스 SWC의 포트 목록은 서로 다른 산출물이라, 설정을 바꾼 뒤 명시적으로 한 번 더 생성(Generate)을 해줘야 새 포트가 화면에 나타난다. 이 단계가 정확히 무엇인지는 아래 "6. ECU Configuration → ⑤ Harmonize & Generate" 항목에 자세히 정리했다 — 실습 중 이 두 포트가 안 보인다면 십중팔구 이게 원인이다.
 
 7. **(★중요) I/O Mapping까지 끝내고 최종 Build할 때 `SAFERTE_ERR_0310`(RteEventToTaskMapping 누락) 에러가 나는 이슈**: `Pot`, `LED_Blue`를 IoHwAb에 추가한 시점이 "③ Task Mapping"(`Generate ECU Configuration`)을 실행한 시점보다 **나중**이면, 그 두 포트에 대응하는 IoHwAb 내부 이벤트(`IoHwAb_Ev_..._Pot_ReadDirect`, `IoHwAb_Ev_..._LED_Blue_...`)가 `RteEventToTaskMapping`에 자동으로 채워지지 않은 채로 남는다. 이건 화면에서 사람이 찾아 매핑하는 항목이 아니라 ②/③ 단계를 실행할 때마다 그 시점 기준으로 통째로 자동 생성되는 것이라서, **IoHwAb 설정을 바꾼 뒤에는 반드시 ②(`Generate ECU Configuration`)를 한 번 더 실행**해줘야 한다. 자세한 내용은 아래 "③ Task Mapping" 항목 참고.
+
+8. **(★중요) 최종 Build에서 `SAFERTE_ERR_0129`(`RteUsedOsAlarmRef` 누락) 에러가 나는 이슈**: `TE_RE_SeatSwitch`를 `OsTask_SWC_SeatSwitch_100ms`에 매핑해도, 그 Task 뒤에 있는 `OsAlarm_SWC_SeatSwitch_100ms`을 RTE가 자동으로 못 찾아서 나는 에러다. **이건 RTE3/RTE4/RTE5/Exercise-IO 자료 어디에도 없는, RTE6에만 있는 함정이다** — 다른 실습들은 학생이 직접 만든 Task가 아니라 Base Project에 이미 있던 `OsTask_ASW_FG1_100ms`를 재사용하기 때문에 이 문제 자체가 생기지 않는다. RTE6는 Task와 Alarm을 둘 다 새로 만들기 때문에 `Used Os Alarm Ref`를 수동으로 채워줘야 한다. 자세한 내용과 해결 절차는 아래 "③-1 `Used Os Alarm Ref` 수동 설정" 항목 참고.
 
 이 7가지를 제외하면 나머지 절차는 논리적으로 일관되고 순서도 올바르다. 아래부터는 각 단계가 정확히 무엇을 하는 단계인지 자세히 설명한다.
 
@@ -292,6 +294,32 @@ SAFERTE_ERR_0310: Event configured in the component should be configured in RteE
 **해결법은 화면에서 뭔가를 찾아 수동으로 매핑하는 게 아니라, ②(`Generate ECU Configuration → Next → Rte 선택 → Next → Finish`)를 한 번 더 실행하는 것이다.** IoHwAb 쪽에 `Pot`, `LED_Blue`가 이미 반영된 뒤에 이 마법사를 다시 돌리면, 그 시점 기준으로 `RteEventToTaskMapping`이 다시 자동 생성되면서 새로 추가된 이벤트들도 함께 채워진다.
 
 **정리하면 순서가 중요하다**: IoHwAb Logical 설정을 바꿨다면(⑤ Harmonize & Generate로 Pot/LED_Blue를 반영한 뒤) → **② RTE Configuration(Generate ECU Configuration)을 다시 실행** → 그 다음에 8단계 최종 Build. ②를 딱 한 번만 하고 그 이후에 IoHwAb 설정을 추가/변경했다면, Build 직전에 반드시 ②를 재실행해야 한다.
+
+### ③-1 `Used Os Alarm Ref` 수동 설정 (RTE3/4/5/IO 자료 어디에도 없는, RTE6만의 함정)
+
+`TE_RE_SeatSwitch`(Timing Event)의 `RteEventToTaskMapping`을 만들어도, Build 시 다음 에러가 날 수 있다.
+
+```
+SAFERTE_ERR_0129: RteUsedOsAlarmRef or RteUsedOsSchTblExpiryPointRef should be provided in the
+RteEventToTaskMapping when TimingEvents are configured in the RTE.
+/Path : /AUTOSAR/Rte/SwcInstance_SWC_SeatSwitch/RteEventToTaskMapping_TE_RE_SeatSwitch(Ecud_Rte.arxml)
+```
+
+**원인**: RTE3, RTE4, RTE5, Exercise-IO는 전부 학생이 직접 만든 Task가 아니라, Base Project에 이미 준비되어 있던 `OsTask_ASW_FG1_100ms` 같은 기존 Task에 Timing Event를 매핑한다(`Task Mapping 탭 → SwcInstance_SWC_SeatSwitch → OsTask_ASW_FG1_100ms 선택 → TE_RE_... 선택 → Add`). 그 기존 Task는 이미 특정 Alarm과 연결되도록 준비되어 있어서, `RteUsedOsAlarmRef`가 자동으로 채워진다.
+
+반면 **RTE6는 이 실습 시리즈에서 유일하게 학생이 Task(`OsTask_SWC_SeatSwitch_100ms`)와 Alarm(`OsAlarm_SWC_SeatSwitch_100ms`)을 둘 다 처음부터 새로 만든다.** `Generate ECU Configuration`을 실행하는 시점에 그 Alarm의 `Action(Activate Task)` 설정이 아직 덜 끝나 있으면, RTE는 이 새 Task와 어느 Alarm이 짝인지 자동으로 추론하지 못하고 `RteUsedOsAlarmRef`를 빈 채로 남긴다. RTE3/4/5/IO 자료에 이 필드에 대한 언급이 전혀 없는 건, 그 실습들에서는 애초에 이 문제가 생길 수 없는 구조이기 때문이다 — **RTE6 자료 자체에 빠져 있는, RTE6에만 해당하는 단계**다.
+
+**해결법** (수동으로 채워야 함):
+
+```
+Rte 탭 → All Contents
+→ RteSwComponentInstance → SwcInstance_SWC_SeatSwitch
+→ Event To Task Mapping → RteEventToTaskMapping_TE_RE_SeatSwitch
+
+Used Os Alarm Ref: 옆의 Browse... 클릭 → OsAlarm_SWC_SeatSwitch_100ms 선택 → 저장
+```
+
+이 필드는 `Task Mapping` 탭(요약 화면)에는 컬럼으로 노출되지 않고, `All Contents`(원시 트리 뷰)로 들어가야만 보인다. 이미 성공적으로 빌드된 프로젝트의 `Ecud_Rte.arxml`과 직접 비교해서 확인한 내용이다.
 
 ### ④ I/O Configuration
 
