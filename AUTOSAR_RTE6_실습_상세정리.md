@@ -256,7 +256,7 @@ RTE가 생성한 Runnable 호출 코드는 결국 OS(운영체제)의 Task 안�
 ### ② RTE Configuration
 
 ```
-Configure ECU and Generate Code → Generate ECU Configuration
+Configure ECU and Generate Code (우측 상단 초록 아이콘 클릭) → Generate ECU Configuration
 Next → Rte 선택 → Next → Rte: Generate SwInstance configuration 체크 → Finish
 ```
 
