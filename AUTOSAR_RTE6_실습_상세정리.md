@@ -231,7 +231,8 @@ OK → SWC/Connector 적용 확인 → Apply
 ### ① OS Configuration
 
 ```
-Auto-Wiz → ECU Configuration & Code Generation OS 1.3.0 클릭.
+Auto-Wiz → ECU Configuration & Code Generation OS 1.3.0 클릭
+
 Task + → OsTask_SWC_SeatSwitch_100ms (Activation 1, Priority 117)
 Task + → OsTask_SWC_SeatHeatingControl (Activation 1, Priority 118)
 
