@@ -238,7 +238,7 @@ Task + → OsTask_SWC_SeatHeatingControl (Activation 1, Priority 118)
 
 Alarm + → OsAlarm_SWC_SeatSwitch_100ms
   Counter Ref → OsCounter_Main
-  Action → Activate Task → OsTask_SWC_SeatSwitch_100ms
+  Action → ok 클릭 → Activate Task → ok 클릭 → Browse 클릭 → OsTask_SWC_SeatSwitch_100ms
 
 Application → OsApplication0
   App Alarm Ref에 만든 Alarm 추가
