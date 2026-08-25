@@ -6,7 +6,7 @@
 
 ## 검토 의견 (붙여넣어주신 절차에 대해)
 
-전체적으로 절차의 논리와 순서는 AUTOSAR 방법론에 정확히 맞게 구성되어 있다. 다만 아래 6가지는 실제 진행 중에 한 번 더 확인해보는 게 좋다.
+전체적으로 절차의 논리와 순서는 AUTOSAR 방법론에 정확히 맞게 구성되어 있다. 다만 아래 7가지는 실제 진행 중에 한 번 더 확인해보는 게 좋다.
 
 1. **`IoHwAb_If_AnalnDir`라는 표기**: 다이어그램에서는 `IoHwAb_If_AnaInDir`(Analog Input Direct)로 표기되어 있다. 실습 노트의 `AnalnDir`는 오탈자로 보이며, 툴에서 실제 인터페이스 이름을 선택할 때 정확한 이름인지 확인이 필요하다.
 
@@ -18,9 +18,11 @@
 
 5. **`SWC_SeatHeatingControl` 생성 문구가 2번 적혀 있음**: 실제 오류는 아니고 메모가 중복 작성된 것으로 보인다(같은 동작을 두 번 설명).
 
-6. **(★가장 중요) I/O Mapping에서 `P_IoHwAb…_Pot`, `P_IoHwAb…_LED_Blue`가 안 보이는 이슈**: 이 문서 원문에는 IoHwAb Logical 설정(Pot 이름 변경, LED_Blue 생성) 직후 곧바로 I/O Mapping으로 넘어가는데, **그 사이에 "Harmonize & Generate" 단계가 빠져 있다.** `Ecud_IoHwAb.arxml`에 설정을 저장하는 것과, `Service and I/O` 화면이 실제로 보여주는 IoHwAb 서비스 SWC의 포트 목록은 서로 다른 산출물이라, 설정을 바꾼 뒤 명시적으로 한 번 더 생성(Generate)을 해줘야 새 포트가 화면에 나타난다. 이 단계가 정확히 무엇인지는 아래 "6. ECU Configuration → ③-④ Harmonize & Generate" 항목에 자세히 정리했다 — 실습 중 이 두 포트가 안 보인다면 십중팔구 이게 원인이다.
+6. **(★중요) I/O Mapping에서 `P_IoHwAb…_Pot`, `P_IoHwAb…_LED_Blue`가 안 보이는 이슈**: 이 문서 원문에는 IoHwAb Logical 설정(Pot 이름 변경, LED_Blue 생성) 직후 곧바로 I/O Mapping으로 넘어가는데, **그 사이에 "Harmonize & Generate" 단계가 빠져 있다.** `Ecud_IoHwAb.arxml`에 설정을 저장하는 것과, `Service and I/O` 화면이 실제로 보여주는 IoHwAb 서비스 SWC의 포트 목록은 서로 다른 산출물이라, 설정을 바꾼 뒤 명시적으로 한 번 더 생성(Generate)을 해줘야 새 포트가 화면에 나타난다. 이 단계가 정확히 무엇인지는 아래 "6. ECU Configuration → ⑤ Harmonize & Generate" 항목에 자세히 정리했다 — 실습 중 이 두 포트가 안 보인다면 십중팔구 이게 원인이다.
 
-이 6가지를 제외하면 나머지 절차는 논리적으로 일관되고 순서도 올바르다. 아래부터는 각 단계가 정확히 무엇을 하는 단계인지 자세히 설명한다.
+7. **(★중요) I/O Mapping까지 끝내고 최종 Build할 때 `SAFERTE_ERR_0310`(RteEventToTaskMapping 누락) 에러가 나는 이슈**: `Pot`, `LED_Blue`를 IoHwAb에 추가한 시점이 "③ Task Mapping"(`Generate ECU Configuration`)을 실행한 시점보다 **나중**이면, 그 두 포트에 대응하는 IoHwAb 내부 이벤트(`IoHwAb_Ev_..._Pot_ReadDirect`, `IoHwAb_Ev_..._LED_Blue_...`)가 `RteEventToTaskMapping`에 자동으로 채워지지 않은 채로 남는다. 이건 화면에서 사람이 찾아 매핑하는 항목이 아니라 ②/③ 단계를 실행할 때마다 그 시점 기준으로 통째로 자동 생성되는 것이라서, **IoHwAb 설정을 바꾼 뒤에는 반드시 ②(`Generate ECU Configuration`)를 한 번 더 실행**해줘야 한다. 자세한 내용은 아래 "③ Task Mapping" 항목 참고.
+
+이 7가지를 제외하면 나머지 절차는 논리적으로 일관되고 순서도 올바르다. 아래부터는 각 단계가 정확히 무엇을 하는 단계인지 자세히 설명한다.
 
 ---
 
@@ -262,15 +264,36 @@ Next → Rte 선택 → Next → Rte: Generate SwInstance configuration 체크 �
 
 여기서 실제로 각 SWC(SWC_SeatSwitch, SWC_SeatHeatingControl)에 대응하는 `RteSwComponentInstance`가 생성된다. 이는 "제어기에 배치된 이 컴포넌트에 대해 제어기 관련 설정을 하겠다"는 명시화 단계다.
 
+### ③ Task Mapping
+
 ```
-RTE event to Task Mapping
-  SWC_SeatSwitch: unMapped → OsTask_SWC_SeatSwitch_100ms, TE_RE_SeatSwitch 선택 → Add
-  SWC_SeatHeatingControl: unMapped → OsTask_SWC_SeatHeatingControl, DRE_RE_* 선택 → Add
+RTE event to Task Mapping 클릭
+
+SWC_SeatSwitch Mapping (주기 Task)
+  unMapped → OsTask_SWC_SeatSwitch_100ms 선택
+  TE_RE_SeatSwitch 선택 → Add
+
+SwcInstance_SWC_SeatHeatingControl → unmapped 선택
+  → OsTask_SWC_SeatHeatingControl 선택 → DRE_RE_* 선택 → Add 클릭
 ```
 
 `RteEventToTaskMapping`은 "이 Runnable을 깨우는 이 Event를, 실제로 어느 OS Task 위에서 실행시킬지"를 연결하는 작업이다. `TE_RE_SeatSwitch`(Timing Event)는 `OsTask_SWC_SeatSwitch_100ms`에, `DRE_RE_*`(Data Received Event)는 `OsTask_SWC_SeatHeatingControl`에 매핑된다. 이 매핑이 있어야 RTE가 생성하는 코드가 "이 이벤트가 발생하면 이 Task를 활성화해서 그 안에서 Runnable을 호출하라"는 실제 동작을 만들어낼 수 있다.
 
-### ③ I/O Configuration
+**★ 이 화면은 SWC_SeatSwitch/SWC_SeatHeatingControl뿐 아니라 IoHwAb 같은 Service SWC의 내부 이벤트도 같은 방식으로 관리한다.** `Generate ECU Configuration`(② 단계)을 실행하는 시점에, 그때 존재하는 IoHwAb의 모든 논리 채널(Logical) 이벤트에 대해 `RteEventToTaskMapping_IoHwAb_Ev_...` 컨테이너가 **자동으로** 만들어진다 — 사람이 하나하나 찾아서 매핑하는 화면이 아니라, ②를 실행할 때 그 시점 기준으로 일괄 생성되는 것이다.
+
+문제는 여기서 생긴다: 뒤쪽 "⑤ Harmonize & Generate" 단계에서 `Pot`, `LED_Blue`처럼 IoHwAb에 **새 논리 채널을 추가한 뒤**라면, 그 시점엔 아직 ②(`Generate ECU Configuration`)가 이 새 채널들을 모르는 상태이므로 이 둘에 대한 `RteEventToTaskMapping` 항목이 만들어지지 않는다. 이 상태로 최종 8단계 Build를 돌리면 다음과 같은 에러가 난다.
+
+```
+SAFERTE_ERR_0310: Event configured in the component should be configured in RteEventtoTaskMapping Container.
+/Path : /Svc_IoHwAb/.../IoHwAb_Ev_IoHwAbAnalogInputDirectLogical_Pot_ReadDirect(...)
+/Path : /Svc_IoHwAb/.../IoHwAb_Ev_IoHwAbPwmLogical_LED_Blue_...(...)
+```
+
+**해결법은 화면에서 뭔가를 찾아 수동으로 매핑하는 게 아니라, ②(`Generate ECU Configuration → Next → Rte 선택 → Next → Finish`)를 한 번 더 실행하는 것이다.** IoHwAb 쪽에 `Pot`, `LED_Blue`가 이미 반영된 뒤에 이 마법사를 다시 돌리면, 그 시점 기준으로 `RteEventToTaskMapping`이 다시 자동 생성되면서 새로 추가된 이벤트들도 함께 채워진다.
+
+**정리하면 순서가 중요하다**: IoHwAb Logical 설정을 바꿨다면(⑤ Harmonize & Generate로 Pot/LED_Blue를 반영한 뒤) → **② RTE Configuration(Generate ECU Configuration)을 다시 실행** → 그 다음에 8단계 최종 Build. ②를 딱 한 번만 하고 그 이후에 IoHwAb 설정을 추가/변경했다면, Build 직전에 반드시 ②를 재실행해야 한다.
+
+### ④ I/O Configuration
 
 이 단계는 순수 소프트웨어(SWC, Runnable) 설정을 실제 물리적인 MCU 핀/타이머/ADC 자원과 연결하는 준비 작업이다. 아래 항목들은 서로 참조로 연결된 체인이라, 순서를 지켜서 "만들고 → 그 다음 것에서 방금 만든 것을 참조"하는 흐름으로 진행해야 한다.
 
@@ -358,7 +381,7 @@ IoHwAbPwm → Logical → 우측 상단 + 클릭
 - **PWM 쪽(`IoHwAbPwmLogical_LED_Blue`)**: 원래부터 존재하지 않던 새 컨테이너를 만드는 것이므로, 위 스텝처럼 `Hw Pwm Ch Ref`에 직접 `PwmChannel_PTA31`을 선택해서 참조를 채워 넣는 과정이 절차에 포함되어 있다.
 - **아날로그 입력 쪽(`IoHwAbAnalogInputDirectLogical_Pot`)**: 기존에 있던(Test 목적으로 만들어졌던) 컨테이너의 **이름만** 바꾸는 절차다. 이 컨테이너는 이미 실제 ADC 채널(PTA11에 대응하는 `Adc Group Ref`)을 참조하고 있는 상태로 Base Project에 준비되어 있으므로, 이름만 `Pot`으로 바꿔주면 된다 — 별도로 ADC 참조를 새로 연결해줄 필요는 없다(직접 확인함).
 
-### ④ Harmonize & Generate (실습 노트에 빠져 있지만 반드시 필요)
+### ⑤ Harmonize & Generate (실습 노트에 빠져 있지만 반드시 필요)
 
 **이 단계가 RTE6 실습 노트 원문에는 아예 빠져 있다.** 위에서 `Pot`, `LED_Blue`를 만들고 저장하는 것만으로는, 바로 다음 단계인 I/O Mapping 화면에 그 포트가 나타나지 않는다. `Ecud_IoHwAb.arxml`(설정)과 `Service and I/O` 화면이 보는 실제 IoHwAb 서비스 SWC(`Generated/Bsw_Output/swcd/Swcd_Bsw_IoHwAb.arxml`)는 서로 다른 산출물이고, 설정을 바꾼 뒤 아래 절차로 "생성(Generate)"을 명시적으로 한 번 실행해줘야 그 변경이 서비스 SWC의 P-Port로 반영된다.
 
@@ -381,7 +404,7 @@ Generate 완료 후 → Configure ECU and Generate Code → Service and I/O → 
 - 망치 아이콘을 그냥 클릭하면 원래 노트 마지막 8단계(Generate & Build)에서 하는 **SCons 전체 Build**(컴파일·링크까지 포함)가 실행된다. 이건 도중에 관련 없는 설정 오류(예: OS Alarm의 Activate Task 참조 누락 등)가 하나만 있어도 그 자리에서 전체가 멈춰버린다. 반면 아이콘 옆 화살표를 눌러 나오는 **`Generate All`**은 각 모듈의 생성을 개별적으로 돌리는 명령이라, 중간에 관련 없는 모듈에서 에러가 나도 IoHwAb 쪽 생성 결과는 정상적으로 나올 수 있다.
 - 이 `Generate All`은 8단계의 최종 Build를 대체하는 게 아니라, **I/O Mapping을 진행하기 위해 중간에 한 번 더 필요한 별도 단계**다. 즉 최종적으로는 8단계(Generate & Build)를 어차피 다시 한 번 실행하게 된다.
 
-### ⑤ I/O Mapping
+### ⑥ I/O Mapping
 
 ```
 Configure ECU and Generate Code → Service and I/O → IoHwAb
@@ -393,7 +416,9 @@ P_IoHwAb…_LED_Blue → R_LED_Blue
 
 여기서 드디어 SWC 쪽의 Client 포트(R_Pot, R_LED_Red, R_SW06, R_LED_Blue)와, IoHwAb Service SWC 쪽의 실제 Provide 포트(P_IoHwAb…)를 서로 연결한다. `Respect Naming Rule`을 해제하는 이유는, 두 포트의 이름이 자동 매칭 규칙(이름이 비슷해야 자동으로 이어줌)에 딱 맞지 않아서, 이름 규칙과 무관하게 수동으로 정확한 짝을 골라 연결해주기 위해서다. 이 연결이 완료되어야 SWC가 요청하는 하드웨어 접근이 실제 IoHwAb 구현으로 이어진다.
 
-**`P_IoHwAb…_Pot`이나 `P_IoHwAb…_LED_Blue`가 이 리스트에 안 보인다면**, 위 "Harmonize & Generate" 단계(`Generate ECU Configuration` → `망치 아이콘 옆 화살표` → `Generate All`)를 아직 안 했거나, 새로 만든/이름 바꾼 IoHwAb 설정을 저장한 뒤 다시 실행하지 않은 것이다. 그 경우 십중팔구 포트가 안 보이는 원인은 이 하나다.
+**`P_IoHwAb…_Pot`이나 `P_IoHwAb…_LED_Blue`가 이 리스트에 안 보인다면**, 위 "⑤ Harmonize & Generate" 단계(`Generate ECU Configuration` → `망치 아이콘 옆 화살표` → `Generate All`)를 아직 안 했거나, 새로 만든/이름 바꾼 IoHwAb 설정을 저장한 뒤 다시 실행하지 않은 것이다. 그 경우 십중팔구 포트가 안 보이는 원인은 이 하나다.
+
+**I/O Mapping까지 다 끝냈다면, 8단계 Build 직전에 반드시 "③ Task Mapping"에서 설명한 대로 ② RTE Configuration을 한 번 더 실행**해서, `Pot`/`LED_Blue`에 대한 `RteEventToTaskMapping`도 자동 생성되게 해야 한다. 이걸 빼먹으면 Build가 `SAFERTE_ERR_0310` 에러로 중단된다.
 
 ---
 
